@@ -95,4 +95,29 @@ describe('MoArk model family classification', () => {
       expect(isMoarkChatModel(id), id).toBe(false)
     }
   })
+
+  it('rejects the non-conversational ids that carry none of the obvious words', () => {
+    // Each of these was seen on the LIVE catalogue and identified by hand. They
+    // are the residue a fail-open deny list admits, and a picker offering
+    // `comfyui` or `Real-ESRGAN` is a picker offering failures.
+    for (const id of [
+      'ACE-Step-v1-3.5B', 'all-mpnet-base-v2', 'AnimeSharp', 'comfyui',
+      'Real-ESRGAN', 'RMBG-2.0', 'sam3', 'ViduQ2-Pro', 'ViduQ3-Turbo',
+    ]) {
+      expect(isMoarkChatModel(id), id).toBe(false)
+    }
+  })
+
+  it('keeps every conversational id the live catalogue actually carries', () => {
+    // The other half of the bargain: pruning must not eat a model anyone came
+    // for. These ids are transcribed from the live list.
+    for (const id of [
+      'DeepSeek-V4-Pro', 'deepseek-v4.1-flash', 'DeepSeek-V4-Flash',
+      'qwen3.8-max', 'qwen3.8-flash', 'Qwen3-Coder-Next', 'Qwen3-Coder-Flash',
+      'kimi-k3', 'Kimi-K2.7-Code', 'GLM-5.3', 'GLM-5.2', 'MiniMax-M3',
+      'MiniMax-M2.7', 'Qwen3.8-Omni-Flash', 'AutoGLM-Phone-9B-Multilingual',
+    ]) {
+      expect(isMoarkChatModel(id), id).toBe(true)
+    }
+  })
 })

@@ -220,6 +220,18 @@ const NON_CHAT_FAMILY_MARKERS: readonly string[] = [
   'ocr', 'mineru', 'uvdoc', 'paddleocr',
   // 3D generation.
   '3d', 'hi3dgen', 'hunyuan3d', 'triposg',
+  // Families whose names carry none of the words above, added only after each
+  // was seen on the live catalogue and identified. These are the residue the
+  // fail-open design admits: a picker offering `comfyui` or `Real-ESRGAN` is a
+  // picker offering failures, and the fix is evidence, never a guess at a name.
+  'ace-step',   // audio generation
+  'mpnet',      // sentence embedding (`all-mpnet-base-v2`)
+  'animesharp', // anime upscaler
+  'comfyui',    // a workflow engine, not a model at all
+  'esrgan',     // super-resolution (`Real-ESRGAN`)
+  'rmbg',       // background removal (`RMBG-2.0`)
+  'sam3', 'sam-2', // segmentation
+  'viduq',      // video generation (`ViduQ2/Q3`)
 ]
 
 /**
