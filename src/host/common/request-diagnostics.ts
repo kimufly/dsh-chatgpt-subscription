@@ -30,6 +30,8 @@ export const DIAGNOSTIC_PROVIDERS = [
   'codex',
   // 第九条线路：与 CONTROLLED_PROVIDERS 一样，「诊断里认识这条线路」是一条注册点。
   'glm-coding-plan',
+  // 第十条线路。诊断认识它，才能把它的延迟与 token 计数记进同一份报表。
+  'moark',
 ] as const
 
 export type DiagnosticProviderId = (typeof DIAGNOSTIC_PROVIDERS)[number]

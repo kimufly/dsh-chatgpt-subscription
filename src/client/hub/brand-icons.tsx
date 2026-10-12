@@ -14,6 +14,7 @@ import { BRAND_MARKS, type BrandMarkKey, type BrandMarkSvg } from './brand-svg.t
 export type HubProviderId =
   | 'chatgpt' | 'antigravity' | 'command-code' | 'kimi-code'
   | 'workbuddy' | 'minimax-code' | 'glm-coding-plan' | 'claude' | 'ollama'
+  | 'moark'
 
 /**
  * GLM（ZCode 账号）这张卡自带的标记。
@@ -66,6 +67,10 @@ export const PROVIDER_BRANDS: Record<HubProviderId, ProviderBrand> = {
   'glm-coding-plan': { mark: 'glm', tile: '#3859FF' },
   claude: { mark: 'claude', color: '#D97757', tile: '#D97757' },
   ollama: { monogram: 'O', color: '#3B3B3B', tile: '#3B3B3B' },
+  // 模力方舟没有可从 brand-svg.ts 提取的 lockup，所以走与 ollama 相同的单字母
+  // 底砖兜底（`BrandTile` 在 `mark` 缺席时正是这样渲染的），而不是仿造一个商标
+  // 路径——一个认错的商标比一个没有商标更糟。底色取平台主视觉的青蓝。
+  moark: { monogram: 'M', color: '#0B7C8C', tile: '#0B7C8C' },
 }
 
 /** One brand mark at a given box size; the artwork is decorative. */

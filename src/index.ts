@@ -57,6 +57,11 @@ import { registerOllamaRoutes } from './host/ollama/routes.ts'
 import { OllamaAccountPool } from './host/ollama/account-pool.ts'
 import { PROVIDER_ID as OLLAMA_PROVIDER_ID, PROVIDER_NAME as OLLAMA_PROVIDER_NAME } from './host/ollama/types.ts'
 import { FileCredentialStore as OllamaCredentialStore, FileModelSettingsStore as OllamaModelSettingsStore } from './host/ollama/token-store.ts'
+import { MoarkAdapter } from './host/moark/adapter.ts'
+import { registerMoarkRoutes } from './host/moark/routes.ts'
+import { MoarkAccountPool } from './host/moark/account-pool.ts'
+import { PROVIDER_ID as MOARK_PROVIDER_ID, PROVIDER_NAME as MOARK_PROVIDER_NAME } from './host/moark/types.ts'
+import { FileCredentialStore as MoarkCredentialStore, FileModelSettingsStore as MoarkModelSettingsStore } from './host/moark/token-store.ts'
 import { KimiCodeAdapter } from './host/kimi-code/adapter.ts'
 import { KimiCodeAccountPool } from './host/kimi-code/account-pool.ts'
 import { registerKimiCodeRoutes } from './host/kimi-code/routes.ts'
@@ -469,6 +474,34 @@ export function apply(ctx: Context, pluginConfig: Config = {}): void {
     const disposeOllamaRoutes = registerOllamaRoutes(ctx, {
       accountPool: ollamaAccountPool,
       modelSettings: ollamaModelSettings,
+      fetchFn: proxyFetch,
+    })
+
+    // MoArk (模力方舟): access tokens from the console, three protocol surfaces,
+    // prepaid resource packs. Structurally the Ollama line's sibling - a static
+    // key with no expiry - plus a per-line choice of which surface carries a
+    // request, because MoArk's own catalogue declares no protocol per model.
+    const moarkStore = new MoarkCredentialStore()
+    const moarkModelSettings = new MoarkModelSettingsStore()
+    const moarkAccountPool = new MoarkAccountPool({ store: moarkStore })
+    const moarkAdapter = new MoarkAdapter(
+      moarkStore,
+      moarkModelSettings,
+      { fetchFn: modelFetch.moark, attachments: ctx.attachments },
+      moarkAccountPool,
+    )
+    const moarkClaim = claimProviderRoute(ctx, {
+      providerId: MOARK_PROVIDER_ID,
+      label: MOARK_PROVIDER_NAME,
+      adapter: moarkAdapter,
+      // Like Ollama, this line claims once at setup rather than watching
+      // `llm/adapters-updated`: its enabled flag is read per call, so a
+      // re-claim would add nothing.
+      watch: false,
+    })
+    const disposeMoarkRoutes = registerMoarkRoutes(ctx, {
+      accountPool: moarkAccountPool,
+      modelSettings: moarkModelSettings,
       fetchFn: proxyFetch,
     })
 
@@ -924,6 +957,26 @@ export function apply(ctx: Context, pluginConfig: Config = {}): void {
           }
         },
       },
+      {
+        id: 'moark',
+        providerId: MOARK_PROVIDER_ID,
+        canToggle: true,
+        read: async () => {
+          const accounts = await moarkAccountPool.listAccounts().catch(() => [])
+          const current = await moarkModelSettings.read()
+          const total = catalogTotal(current.catalogModels.length)
+          // Same tri-state as the Ollama line: null is "no filter" (every synced
+          // model), an array is explicit — and an empty one switches all off.
+          const selected = current.enabledModelIds === null ? total : current.enabledModelIds.length
+          return {
+            enabled: current.enabled !== false,
+            accountCount: accounts.length,
+            authenticated: routable(accounts),
+            enabledModelCount: total === null || selected === null ? null : Math.min(selected, total),
+            totalModelCount: total,
+          }
+        },
+      },
     ]
     const disposeHubOverview = registerHubOverviewRoutes(ctx, hubSources)
     const disposeAdapter = ctx.llm.registerAdapter([PROVIDER_ID], adapter)
@@ -983,6 +1036,8 @@ export function apply(ctx: Context, pluginConfig: Config = {}): void {
       antigravityClaim.dispose()
       disposeOllamaRoutes()
       ollamaClaim.dispose()
+      disposeMoarkRoutes()
+      moarkClaim.dispose()
       disposeCommandCodeRoutes()
       commandCodeClaim.dispose()
       disposeKimiCodeRoutes()

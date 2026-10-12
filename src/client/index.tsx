@@ -39,6 +39,7 @@ import { GlmCodingPlanComposerQuota } from './glm-coding-plan/GlmCodingPlanCompo
 import { dictionaries as glmCodingPlanDicts, NS_GLM_CODING_PLAN, type GlmCodingPlanLocaleKey } from './glm-coding-plan/locales.ts'
 import { installGlmCodingPlanStyles } from './glm-coding-plan/styles.ts'
 import { dictionaries as ollamaDicts, NS_OLLAMA, type OllamaLocaleKey } from './ollama/locales.ts'
+import { dictionaries as moarkDicts, NS_MOARK, type MoarkLocaleKey } from './moark/locales.ts'
 import { setupMermaidObserver } from './mermaid/renderer.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -60,6 +61,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'dsh-workbuddy': WorkBuddyLocaleKey
     'dsh-glm-coding-plan': GlmCodingPlanLocaleKey
     'dsh-ollama': OllamaLocaleKey
+    'dsh-moark': MoarkLocaleKey
   }
 }
 
@@ -109,6 +111,7 @@ export function apply(ctx: ClientContext): void {
     return () => {}
   }, 'dsh-glm-coding-plan: styles')
   ctx.effect(() => ctx.locale.register(NS_OLLAMA, ollamaDicts), 'dsh-ollama: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS_MOARK, moarkDicts), 'dsh-moark: dictionaries')
   ctx.effect(() => {
     installWorkBuddyStyles()
     return () => {}

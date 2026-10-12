@@ -16,6 +16,7 @@
 - [WorkBuddy 线路](#workbuddy-线路)
 - [Claude（订阅）线路](#claude订阅线路)
 - [GLM（ZCode 账号）线路](#glmzcode-账号线路)
+- [MoArk（模力方舟）线路](#moark模力方舟线路)
 - [子代理模型授权](#子代理模型授权0215-起032-起强制指定模型)
 - [随包分发的 Agent Preset](#随包分发的-agent-preset)
 - [本机登录](#本机登录)
@@ -26,9 +27,9 @@
 
 ## 线路总览
 
-本插件同时接入 **8 条订阅线路**，每条各自独立注册 Provider、独立登录、独立额度卡片。
+本插件同时接入 **10 条线路**，每条各自独立注册 Provider、独立登录（或粘贴凭据）、独立额度卡片。
 
-| Provider ID | 订阅 | 协议 | 登录方式 | 模型目录来源 |
+| Provider ID | 订阅 / 凭据 | 协议 | 登录方式 | 模型目录来源 |
 | --- | --- | --- | --- | --- |
 | `codex-chatgpt` | ChatGPT（Plus / Pro / Business…） | Responses | 浏览器 OAuth（localhost:1455 回调），或导入本机 Codex CLI 登录 | **实时** `/backend-api/codex/models` |
 | `kimi-code` | Kimi 会员 | Anthropic Messages | **设备码**（RFC 8628） | 实时 `/v1/models` + 本地兜底 |
@@ -38,6 +39,8 @@
 | `minimax-code` | MiniMax Code 编程订阅 | Anthropic Messages | **复用桌面端登录态** 或设备码 | **硬编码**（见下） |
 | `antigravity` | Google Antigravity | Gemini | Google OAuth | 内置表 |
 | `glm-coding-plan` | GLM Coding Plan（ZCode 账号，国区 BigModel / 国际区 Z.ai） | Anthropic Messages + OpenAI Chat Completions（按模型声明） | ZCode 账号 OAuth（浏览器中转轮询）+ 可选导入本机 ZCode 登录态 | 随包目录（源自官方 `zcode-builtin.json`） |
+| `ollama` | Ollama Cloud（静态 API Key） | OpenAI 兼容 | 粘贴 API Key（不 OAuth、不过期） | 实时 `/api/tags`，**无兜底表** |
+| `moark` | MoArk（模力方舟 / Gitee AI，预付费资源包 + 访问令牌） | OpenAI 兼容 + Responses + Anthropic Messages（**逐次可选**，见下） | 粘贴访问令牌（不 OAuth、不过期） | 实时 `/v1/models`（208 条，仅保留对话家族），**无兜底表** |
 
 > **只有 minimax-code 是硬编码目录，而且是有意的**：该端点的 `GET /v1/models` **未对订阅流量开放**（返回 503 `direct_route_not_configured`），任何「实时目录」都只会是一个必然失败的请求。其取值转录自本机官方客户端的 `config.yaml`。
 >
@@ -861,6 +864,69 @@ access token / refresh token / 授权码 / PKCE verifier**；诊断里提到某�
 - **客户端签名层（Client Signing V4）默认关闭。** 唯一有实测记录的项目做过 A/B 对照：**带签名与不带签名的响应完全一致**（都是 429/1113），从未观察到服务端因为缺签名而拒绝请求。没有证据表明缺签名会被拒时，默认开启一个逆向来的签名算法只会平白增加故障面，因此它默认关、需要显式打开。反过来，**服务端是否真会因为缺签名返回签名错误，至今从未被观察到**——这条不是「已验证不需要签名」，而是「从未验证过」。
 - **国区兑换链未验证。** 证据来自三个社区实现（等级 B，逆向实测而非官方契约），三者**都以国际区为主**，国区业务面的形状是否同构没有实测样本。国区兑换失败会带上明确说明与下一步建议（改用国际区，或用 `DSH_GLM_CN_BUSINESS_HOST` 等环境变量指向实测过的部署），**不静默失败**。同理，国区配额到底打 `bigmodel.cn` 还是官方文档里那句「亦可用 `open.bigmodel.cn`」也没有实测，本插件取 `bigmodel.cn`。
 - **兑换链的所有端点都可用 `DSH_GLM_*` 环境变量覆盖**（两区的业务 host、模型面 host、授权入口、appId / client_id、Key 名、OAuth 控制面基址，签名层开关也在其中）。这是为等级 B 的兑换链准备的退路：上游一次变更让整条链失效时，回滚是改一个环境变量，而不是发一个版本。
+
+## MoArk（模力方舟）线路
+
+MoArk（模力方舟，即 Gitee AI，`moark.com`）与前八条线路的形态**不同**：它不是「用订阅账号登录」，而是**预付费资源包 + 访问令牌**——注册后在工作台创建访问令牌（可选购买全模型资源包或厂商算力资源包），之后所有调用都以该令牌计费。令牌不会过期，在控制台吊销即可作废，因此这条线路**没有 OAuth、没有 refresh_token、也没有可收编的本机登录**，与 `ollama` 线路同属「粘一个静态凭据」那一类。
+
+实施计划与逐条证据见 [`docs/moark-line-plan.md`](docs/moark-line-plan.md)。
+
+### 获取访问令牌
+
+进入 工作台 → 设置 → 访问令牌，点击「新建访问令牌」。令牌类型选**通用令牌**（绑定 Serverless API 等调用资源），并按需勾选授权范围（可只绑定某个资源包）。复制得到的字符串就是本插件要粘贴的凭据。
+
+- 它在 host 侧落盘于系统凭据库（macOS 钥匙串 / Windows DPAPI / Linux Secret Service），**不写入浏览器**，也不出现在任何返回给页面的数据里。
+- 没买资源包也可以先用**免费体验访问令牌**（每日调用次数有限）跑通流程。
+
+### 三条协议面，逐次可选
+
+MoArk 在**同一份模型目录**上同时提供三张协议面，本插件三条都实现，并允许你在设置页选择默认面：
+
+| 面 | 地址 | 上游依据 |
+| --- | --- | --- |
+| OpenAI 兼容（**默认**） | `https://api.moark.com/v1/chat/completions` | 平台快速上手与 OpenAI 客户端示例的正式路径 |
+| Responses | `https://moark.com/v1/responses` | 模力方舟官方 **Codex** 配置页（`wire_api = "responses"`） |
+| Anthropic Messages | `https://moark.com/anthropic/v1/messages` | 模力方舟官方 **Claude Code** 配置页（`ANTHROPIC_BASE_URL`） |
+
+> **为什么协议面是「线路级设置」而不是「逐模型声明」**：GLM 线路能逐模型声明协议，是因为 ZCode 的目录本身写了 `wire`；MoArk 的 `/v1/models` 只返回 `{id, object, created}`，**既没有模态也没有协议**。既然没有可转录的事实，本插件就不发明一个——改为由你选择默认面，目录行将来若带协议声明可逐行覆盖。
+>
+> Anthropic 面按 GLM 线路的同样做法**同时发送 `x-api-key` 与 `Authorization: Bearer`**（同值）。Anthropic 兼容网关对读哪个头并不一致，而模力方舟官方页只钉住了 Bearer 那一半。
+
+### 模型目录
+
+`GET /v1/models` 无需鉴权即可读取，**当前返回 208 个条目**。本插件只保留能对话的家族，**向量 / 重排 / 图像生成 / 视频 / 语音 / OCR / 3D 一律不进选择器**——把 embedding 或视频模型放进模型选择器，等于提供一串注定失败的选项。分类是**拒绝名单**（fail-open）而非白名单：拒绝名单命中已知的非对话家族，**不认识的 id 一律保留**，因为一个未知 id 更可能是新上线的对话模型，而一个白名单会在新模型上线当天把它藏起来。
+
+> **已知边界（有意为之）**：拒绝名单只认家族名。当前实测里 `isMoarkChatModel` 保留 131/208、丢弃 77，而少数非对话 id 因为名字里没有任何家族标记而**被保留**（如 `ACE-Step`、`comfyui`、`Real-ESRGAN`、`RMBG-2.0`、`sam3`、`ViduQ*`）。这是 fail-open 的代价，属于已知边界；**不靠猜名字去补**，要靠证据扩表。
+
+**不内置兜底模型表**（与 `ollama` 同理）：硬编码的模型名是对「某个资源包 entitle 了什么」的猜测，而猜测一旦进入选择器，就是一个能选中却调用失败的模型。首次使用请先同步；同步会持久化，离线启动沿用上一次的好结果。
+
+### 视觉与思考控制
+
+- **图片输入按家族名保守声明**：`qwen*-vl` / `internvl` / `llava` 等家族声明支持；**未列出的家族一律按纯文本处理**，并且**明确在对话里说明「该模型未声明图片支持」**，而不是静默丢掉你的截图——静默丢弃会让模型像没收到图片一样作答，那是最坏的一种错。
+- **思考档位只在家族被声明支持时才发送**。三个面对「思考」的词汇各不相同（OpenAI `reasoning_effort`、Responses `reasoning.effort`、Anthropic `thinking.budget_tokens`），无法表达的值**一律丢弃而不是降级**：把用户明确要求的档位偷偷改掉，会让回答看起来像模型无视了指令。
+
+### 额度：平台没有这个接口，所以不画
+
+MoArk 的**公开文档没有余额 / 配额 / 重置时间的查询接口**，`/v1/models` 之外的候选路径（`/api/open/v1/tokens`、`/api/v1/user/balance`、`/dashboard/billing/credit_grants` 等）实测**全部 404**。因此这条线路**不显示「剩余额度」**——用一个不存在的端点画出来的进度条，是在宣称上游无法支持的事实。
+
+卡片上能给的只有**本机实际消耗**：输入 / 输出 token 与调用次数，取自模力方舟每次响应自己返回的 `usage`，并且**只统计本机发出的请求**。它是消耗，不是余额。
+
+预付费平台有一个专属状态码值得单独说：**402（Payment Required）** 表示这个令牌背后的资源包空了。它**既不是凭据失败**（令牌鉴权是通过的）**也不是限流**（等下去不会恢复），所以插件把它报成自己的状态（`QUOTA_EXCEEDED`）并提示「购买 / 续费资源包，或换一个令牌」，而不是折叠进另外两者。
+
+### 插件路由（MoArk）
+
+前缀 `/moark/api`（与其它线路一致，不挂在 ChatGPT 线路的 `/api/dsh-chatgpt-subscription` 下）：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/status` | 令牌池、已同步模型、默认协议面、可用状态；含 `keyUrl`（创建令牌的页面） |
+| POST | `/settings` | `{ enabled?, defaultWire? }`；`defaultWire` 只接受三个已实现的面，未知值**拒绝而不是落盘** |
+| GET | `/accounts` | 同 `/status`（供共享账号卡片复用） |
+| POST | `/accounts` | `{ action: add \| set-primary \| set-alias \| delete \| clear-cooldown \| strategy, ... }` |
+| GET / POST | `/models` | 读取 / 更新模型勾选；`enabledModelIds` 是三态：`null`=不筛选、数组=显式选择、**空数组=全部关闭** |
+| POST | `/catalog/refresh` | 用当前令牌读一次 `/v1/models` 并持久化；失败按 401/403（令牌）、其它状态（上游）、网络（不可达）、非 JSON（被改写）四类分别说明 |
+
+> **一个继承来的缺陷与本地修正**：`/accounts` 里的 `strategy` 动作**不需要 `accountId`**（轮转策略是池级属性），但 Ollama 线路的路由把 `accountId === undefined` 的判断放在 `strategy` 分支**之前**，因此那条线路的「调度策略」选择器实际上永远返回 `accountId is required.`（它的客户端 `accountAction('strategy', { strategy })` 确实不带 accountId，且没有测试覆盖到）。MoArk 线路把 `strategy` 分支**提前到该判断之前**并加了回归测试。**这是本仓库上游 Ollama 线路现存的一个真实缺陷**，未在本分支修改它的文件。
 
 ## 本机登录
 

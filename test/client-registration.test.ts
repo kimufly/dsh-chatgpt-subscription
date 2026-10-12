@@ -322,7 +322,7 @@ describe('client registration', () => {
   })
 
   it('hosts every subscription provider behind an overview hub in one settings page', async () => {
-    const TAB_IDS = ['chatgpt', 'antigravity', 'command-code', 'kimi-code', 'workbuddy', 'minimax-code', 'glm-coding-plan', 'claude', 'ollama'] as const
+    const TAB_IDS = ['chatgpt', 'antigravity', 'command-code', 'kimi-code', 'workbuddy', 'minimax-code', 'glm-coding-plan', 'claude', 'ollama', 'moark'] as const
     const originalActEnvironment = globalThis.IS_REACT_ACT_ENVIRONMENT
     globalThis.IS_REACT_ACT_ENVIRONMENT = true
     const originalFetch = globalThis.fetch
@@ -462,12 +462,13 @@ describe('client registration', () => {
       // The opening screen is the overview: one card per provider, in registry
       // order, and no provider section mounted underneath.
       const cards = [...container.querySelectorAll<HTMLElement>('.dsh-hub-card')]
-      expect(cards.map((card) => card.querySelector('.dsh-hub-card-name')?.textContent)).toEqual(['ChatGPT', 'Antigravity', 'Command Code', 'Kimi Code', 'WorkBuddy', 'MiniMax Code', 'GLM（ZCode 账号）', 'Claude', 'Ollama'])
+      expect(cards.map((card) => card.querySelector('.dsh-hub-card-name')?.textContent)).toEqual(['ChatGPT', 'Antigravity', 'Command Code', 'Kimi Code', 'WorkBuddy', 'MiniMax Code', 'GLM（ZCode 账号）', 'Claude', 'Ollama', 'MoArk（模力方舟）'])
       expect(container.querySelector('.dsh-hub-detail')).toBeNull()
       expect(container.querySelector('#dsh-codex-title')).toBeNull()
       // Every toggleable line renders a switch on its card; Ollama, which has
-      // no enable switch on the host, renders none.
-      expect(container.querySelectorAll('.dsh-hub-card [role="switch"]')).toHaveLength(8)
+      // no enable switch on the host, renders none. MoArk does have one, so it
+      // adds the tenth card and the ninth switch.
+      expect(container.querySelectorAll('.dsh-hub-card [role="switch"]')).toHaveLength(9)
       const ollamaCard = cards.find((card) => card.textContent?.includes('Ollama'))!
       expect(ollamaCard.querySelector('[role="switch"]')).toBeNull()
       // Annotations carry the account count from the aggregated overview.

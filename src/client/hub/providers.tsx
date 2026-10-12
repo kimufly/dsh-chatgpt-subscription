@@ -24,6 +24,8 @@ import { MinimaxCodeSection } from '../minimax-code/MinimaxCodeSection.tsx'
 import { GlmCodingPlanSection } from '../glm-coding-plan/GlmCodingPlanSection.tsx'
 import { ClaudeSection } from '../claude/ClaudeSection.tsx'
 import { OllamaSection } from '../ollama/OllamaSection.tsx'
+import { MoarkSection } from '../moark/MoarkSection.tsx'
+import { MOARK_PROVIDER_NAME, MOARK_ROUTE_PREFIX } from '../../shared/moark-contracts.ts'
 import type { HubProviderId } from './brand-icons.tsx'
 
 /** What the detail page hands to a mounted section. */
@@ -132,6 +134,13 @@ export const HUB_PROVIDERS: readonly HubProviderDescriptor[] = [
     name: 'Ollama',
     setEnabled: (enabled) => postLineSettings('/ollama/api', { enabled }),
     renderDetail: ({ onModelChange }) => <OllamaSection onModelChange={onModelChange} />,
+  },
+  {
+    // MoArk（模力方舟）：位置与 host 侧注册顺序一致（ollama 之后）。
+    id: 'moark',
+    name: MOARK_PROVIDER_NAME,
+    setEnabled: (enabled) => postLineSettings(MOARK_ROUTE_PREFIX, { enabled }),
+    renderDetail: ({ onModelChange }) => <MoarkSection onModelChange={onModelChange} />,
   },
 ]
 
