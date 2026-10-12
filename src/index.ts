@@ -494,15 +494,23 @@ export function apply(ctx: Context, pluginConfig: Config = {}): void {
       providerId: MOARK_PROVIDER_ID,
       label: MOARK_PROVIDER_NAME,
       adapter: moarkAdapter,
-      // Like Ollama, this line claims once at setup rather than watching
-      // `llm/adapters-updated`: its enabled flag is read per call, so a
-      // re-claim would add nothing.
-      watch: false,
+      // Watching `llm/adapters-updated` (the default; NOT the `watch: false` the
+      // Ollama line passes) is what makes a refused claim recoverable. The claim
+      // is all-or-nothing, so a route that was momentarily owned at setup would
+      // otherwise stay unclaimed for the whole session — the settings card would
+      // work, and the model picker would show none of this line's models for
+      // reasons nothing could report. Re-claiming is a no-op while we hold it.
+      watch: true,
     })
     const disposeMoarkRoutes = registerMoarkRoutes(ctx, {
       accountPool: moarkAccountPool,
       modelSettings: moarkModelSettings,
       fetchFn: proxyFetch,
+      // The card reports whether this plugin actually owns the route, so a state
+      // that silently costs a user every model is visible instead of looking
+      // like a line with nothing to offer.
+      serving: () => moarkClaim.serving(),
+      conflict: () => moarkClaim.conflict(),
     })
 
     const commandCodeClaim = claimProviderRoute(ctx, {

@@ -86,6 +86,8 @@ describe('MoArk settings routes', () => {
   let modelSettings: FileModelSettingsStore
   let accountPool: MoarkAccountPool
   let upstream: () => Promise<Response>
+  /** Register the route set again with extra options, for tests about them. */
+  let setupRoutes: (extra?: Partial<Parameters<typeof registerMoarkRoutes>[1]>) => Promise<Respond>
 
   beforeEach(async () => {
     // EVERY path is per-test. The pool's file name is fixed in production, and
@@ -102,28 +104,32 @@ describe('MoArk settings routes', () => {
     emitted = []
     upstream = async () => Response.json(MODELS)
 
-    const routes: Array<{ handler: (request: IncomingMessage, response: ServerResponse) => Promise<void> }> = []
-    const ctx = {
-      webServer: {
-        register(route: (typeof routes)[number]) {
-          routes.push(route)
-          return () => undefined
+    setupRoutes = async (extra = {}) => {
+      const routes: Array<{ handler: (request: IncomingMessage, response: ServerResponse) => Promise<void> }> = []
+      const ctx = {
+        webServer: {
+          register(route: (typeof routes)[number]) {
+            routes.push(route)
+            return () => undefined
+          },
         },
-      },
-      emit: (event: unknown) => {
-        emitted.push(event)
-      },
-    } as unknown as Context
-    registerMoarkRoutes(ctx, {
-      accountPool,
-      modelSettings,
-      fetchFn: (async () => upstream()) as unknown as typeof fetch,
-    })
-    respond = async (init) => {
-      const { response, captured } = fakeExchange()
-      await routes[0]!.handler(fakeRequest(init), response)
-      return captured
+        emit: (event: unknown) => {
+          emitted.push(event)
+        },
+      } as unknown as Context
+      registerMoarkRoutes(ctx, {
+        accountPool,
+        modelSettings,
+        fetchFn: (async () => upstream()) as unknown as typeof fetch,
+        ...extra,
+      })
+      return async (init) => {
+        const { response, captured } = fakeExchange()
+        await routes[0]!.handler(fakeRequest(init), response)
+        return captured
+      }
     }
+    respond = await setupRoutes()
   })
 
   afterEach(async () => {
@@ -187,10 +193,39 @@ describe('MoArk settings routes', () => {
 
   it('syncs the catalogue and keeps only chat-capable models', async () => {
     await addToken()
+    emitted.length = 0
     const captured = await respond({ url: path_('/catalog/refresh'), method: 'POST', body: {} })
     expectEnvelope(captured, 200)
     const value = captured.body.value as { models: Array<{ id: string }> }
     expect(value.models.map((model) => model.id)).toEqual(['DeepSeek-V4-Pro', 'GLM-5.3'])
+    // The picker learns the offer changed only through this event; without it a
+    // freshly synced catalogue stays invisible until something unrelated emits.
+    expect(emitted).toContain('llm/adapters-updated')
+  })
+
+  it('announces a new token, which is what first makes the line listable at all', async () => {
+    emitted.length = 0
+    await addToken()
+    expect(emitted).toContain('llm/adapters-updated')
+  })
+
+  it('reports whether this plugin owns the provider route', async () => {
+    // Default: owned. A refused claim (another adapter already serves `moark`)
+    // is the state that leaves the card working while the model picker shows
+    // none of this line's models — so it has to be visible.
+    const owned = await respond({ url: path_('/status') })
+    const ownedValue = owned.body.value as { serving: boolean; conflict: string | null }
+    expect(ownedValue.serving).toBe(true)
+    expect(ownedValue.conflict).toBeNull()
+
+    const contested = await setupRoutes({
+      serving: () => false,
+      conflict: () => 'an adapter for provider "moark" is already registered',
+    })
+    const refused = await contested({ url: path_('/status') })
+    const refusedValue = refused.body.value as { serving: boolean; conflict: string | null }
+    expect(refusedValue.serving).toBe(false)
+    expect(refusedValue.conflict).toContain('already registered')
   })
 
   it('asks for a token rather than syncing without one', async () => {

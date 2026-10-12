@@ -113,6 +113,21 @@ export interface MoarkWebStatus {
   defaultWire: MoarkWire
   /** True when at least one account can currently serve a request. */
   usable: boolean
+  /**
+   * Whether THIS plugin currently owns the `moark` provider route.
+   *
+   * A route is claimed through `llm.registerAdapter`, and registration is
+   * all-or-nothing: if another adapter already serves `moark` — a hand-configured
+   * provider in DSH settings that happens to use the same id is the usual rival —
+   * the claim is refused. The settings card still works, because its routes are
+   * independent of the claim, but the model picker would then keep showing *that*
+   * adapter's models and none of ours — which is indistinguishable from "the line
+   * is broken" unless it is stated. Every other line here reports this; so does
+   * this one.
+   */
+  serving: boolean
+  /** Why the route is served by another adapter, or null while this plugin owns it. */
+  conflict: string | null
   // Distinct from an empty models list: 'never synced' and 'synced, the
   // service returned nothing' are different states, and the card words them
   // differently.

@@ -22,6 +22,8 @@ export const zh = {
   title: 'MoArk（模力方舟）',
   pageDesc: '用模力方舟（Gitee AI）的访问令牌接入平台模型。令牌在工作台 → 设置 → 访问令牌创建；它不会过期，在控制台吊销即可作废。',
   keysUrlLabel: '创建访问令牌',
+  routeOwned: '模型路由由本插件提供。',
+  routeConflict: '模型路由已被其他 Provider 占用：{detail}。此时模型选择器里显示的是对方的模型，而不是本线路的；请在 DSH 设置中移除重名的 Provider 配置后重新加载。',
 
   keySection: '访问令牌',
   keyPlaceholder: '粘贴模力方舟访问令牌',
@@ -84,6 +86,8 @@ export const en: Record<keyof typeof zh, string> = {
   title: 'MoArk',
   pageDesc: 'Access MoArk (Gitee AI) models with an access token. Create one under Console → Settings → Access Tokens; it does not expire, and revoking it in the console invalidates it.',
   keysUrlLabel: 'Create an access token',
+  routeOwned: 'This plugin serves the model route.',
+  routeConflict: 'Another provider already owns the model route: {detail}. The model picker is showing that provider\u2019s models, not this line\u2019s — remove the duplicate provider configuration in DSH settings and reload.',
 
   keySection: 'Access token',
   keyPlaceholder: 'Paste your MoArk access token',

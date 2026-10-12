@@ -167,6 +167,11 @@ export function MoarkSection(props: Props): React.ReactElement {
           )}
         </div>
         <p className="dsha-notice">{t.pageDesc}</p>
+        <p className="dsha-notice">
+          {status !== null && status.serving === false && status.conflict
+            ? t.routeConflict.replace('{detail}', status.conflict)
+            : t.routeOwned}
+        </p>
         {error !== null && (
           <p className="dsha-notice" style={{ color: 'var(--dsha-danger, #c0392b)' }}>
             {t.error.replace('{detail}', error)}

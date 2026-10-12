@@ -27,6 +27,8 @@ const STATUS: MoarkWebStatus = {
   usable: true,
   catalogSynced: true,
   keyUrl: 'https://moark.com/dashboard/tokens',
+  serving: true,
+  conflict: null,
 }
 
 describe('MoArk settings section', () => {
@@ -127,6 +129,26 @@ describe('MoArk settings section', () => {
     })))
     const root = await render()
     expect(container!.textContent).toContain('Add an access token before syncing models.')
+    await act(async () => root.unmount())
+  })
+
+  it('says so when another provider owns the model route', async () => {
+    // The state that cost a user every model while the card looked healthy: the
+    // settings surface works either way, so without this the line is
+    // indistinguishable from one that simply has nothing to offer.
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ok: true,
+      value: { ...STATUS, serving: false, conflict: 'an adapter for provider "moark" is already registered' },
+    }), { status: 200, headers: { 'content-type': 'application/json' } })))
+    const root = await render()
+    expect(container!.textContent).toContain('模型路由已被其他 Provider 占用')
+    expect(container!.textContent).toContain('already registered')
+    await act(async () => root.unmount())
+  })
+
+  it('confirms ownership when this plugin serves the route', async () => {
+    const root = await render()
+    expect(container!.textContent).toContain(zh.routeOwned)
     await act(async () => root.unmount())
   })
 })

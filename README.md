@@ -929,6 +929,21 @@ MoArk 的**公开文档没有余额 / 配额 / 重置时间的查询接口**，`
 
 > **一个继承来的缺陷与本地修正**：`/accounts` 里的 `strategy` 动作**不需要 `accountId`**（轮转策略是池级属性），但 Ollama 线路的路由把 `accountId === undefined` 的判断放在 `strategy` 分支**之前**，因此那条线路的「调度策略」选择器实际上永远返回 `accountId is required.`（它的客户端 `accountAction('strategy', { strategy })` 确实不带 accountId，且没有测试覆盖到）。MoArk 线路把 `strategy` 分支**提前到该判断之前**并加了回归测试。**这是本仓库上游 Ollama 线路现存的一个真实缺陷**，未在本分支修改它的文件。
 
+> 这条线路的抢占刻意使用 `watch: true`（而不是 Ollama 线路沿用的 `watch: false`）：一次性抢占一旦被拒就**整个会话都不会再试**，而设置卡片看起来完全正常——那正是「一切正常但就是没有模型」这种最难查的状态。改成重试式抢占后，一次瞬时占用可以自愈。
+
+### ⚠️ provider id 撞名：设置页正常，但模型选择器里没有模型
+
+**症状**：MoArk 卡片一切正常（令牌在、能同步出模型、状态显示可用），但对话框旁的模型选择器里**看不到本线路的模型**。
+
+**原因**：DSH 的 provider 路由是**全有全无**的。如果 profile 里已经有一条名为 `moark` 的 Provider（常见于「先用 DSH 原生自定义 Provider 接了一次 MoArk」——即 `@deepseek-ai/dsh-llm-pi-ai` 的 `providers.moark`），它会先占住该路由，本插件的抢占被拒绝。此时设置卡片照常工作（它的 HTTP 路由与 provider 抢占无关，宿主机侧也确实在对外提供模型），但模型选择器问的是**占位者**，永远拿不到本线路的模型。
+
+**判断方法**：本卡片顶部会直接写出来——
+
+- `模型路由由本插件提供。` → 正常。
+- `模型路由已被其他 Provider 占用：an adapter for provider "moark" is already registered` → 就是这个问题。
+
+**修复**：在 DSH「设置 → 模型」里删掉那条重名的 `moark` Provider（或删掉 profile patch 中 `llm-pi-ai` 的 `providers.moark` 段）。本线路会**自动抢回**路由（它监听 `llm/adapters-updated`，每次事件都会重新抢占），**通常不需要重启**；模型选择器随即出现「MoArk（模力方舟）」与全部已同步模型。
+
 ## 本机登录
 
 **每条线路只在自己的详情页里回答关于本机的问题**。ChatGPT（Codex）线路的 ChatGPT 卡片里，「登录」按钮**旁边**就是「导入本机 Codex CLI 登录」——与 Claude 页面上那个收编按钮同样的位置、同样的次要样式；点它可以省掉再走一次 ChatGPT 授权。Claude Code 与 MiniMax Code 各自的设置页里本来就各有一个导入入口，不在这里重复。

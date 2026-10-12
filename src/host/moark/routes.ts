@@ -46,6 +46,15 @@ export interface MoarkRouteOptions {
   accountPool: MoarkAccountPool
   modelSettings: FileModelSettingsStore
   fetchFn?: typeof fetch
+  /** Whether this plugin currently owns the provider route; re-read on every status. */
+  serving?: boolean | (() => boolean)
+  /** Diagnostic when another plugin owns the provider route; re-read on every status. */
+  conflict?: string | null | (() => string | null)
+}
+
+/** Read a status option that may be a plain value, a thunk, or absent. */
+function readOption<T>(value: T | (() => T) | undefined, fallback: T): T {
+  return typeof value === 'function' ? (value as () => T)() : value ?? fallback
 }
 
 /**
@@ -109,6 +118,11 @@ export async function getMoarkWebStatus(options: MoarkRouteOptions): Promise<Moa
     usable: accounts.some((account) => isUsable(account, now)),
     catalogSynced: settings.catalogModels.length > 0,
     keyUrl: KEYS_URL,
+    // Reported rather than assumed: if another adapter owns `moark`, the model
+    // picker shows that adapter's models and none of ours, and without this the
+    // card would look identical to a line that simply has nothing to offer.
+    serving: readOption(options.serving, true),
+    conflict: readOption(options.conflict, null),
   }
 }
 
@@ -234,6 +248,11 @@ export function registerMoarkRoutes(ctx: Context, options: MoarkRouteOptions): (
             const message = error instanceof Error ? error.message : String(error)
             return sendJson(response, 400, { ok: false, error: message })
           }
+          // Adding the FIRST token is what turns an empty line into one the picker
+          // can list models for, and the adapter can only be asked once the
+          // credential exists. Announcing the change is what makes the models
+          // appear without waiting for the next unrelated refresh.
+          ctx.emit?.('llm/adapters-updated')
           return sendJson(response, 200, { ok: true, value: await getMoarkWebStatus(options) })
         }
 
@@ -330,6 +349,12 @@ export function registerMoarkRoutes(ctx: Context, options: MoarkRouteOptions): (
               error: `Read ${result.models.length} models from MoArk but could not save them locally: ${detail}`,
             })
           }
+          // The offer changed, and the model picker learns that only through this
+          // event — the same signal the `/models` and `/settings` branches send.
+          // Without it a freshly synced catalogue stays invisible in the picker
+          // until something unrelated happens to emit, which reads to a user as
+          // "the models never showed up".
+          ctx.emit?.('llm/adapters-updated')
           return sendJson(response, 200, { ok: true, value: { models: result.models } })
         }
 
