@@ -255,6 +255,17 @@ function readEvent(
     state.sawTextDelta = true
     return [{ type: 'text', text: delta }]
   }
+  if (type === 'response.output_text.done') {
+    // A live MoArk stream sends this after the deltas AND carries the complete
+    // text, so it must not be adopted when the deltas already delivered it — but
+    // a gateway that buffered the response may send only this frame, and dropping
+    // it would lose the answer entirely. Same guard, opposite fallback.
+    if (state.sawTextDelta) return []
+    const text = sseString(event.text)
+    if (text === undefined) return []
+    state.sawTextDelta = true
+    return [{ type: 'text', text }]
+  }
   if (type === 'response.reasoning_summary_text.delta' || type === 'response.reasoning_text.delta') {
     const delta = sseString(event.delta)
     return delta === undefined ? [] : [{ type: 'thinking', text: delta }]

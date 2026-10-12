@@ -50,11 +50,36 @@ describe('MoArk request projection', () => {
     }])
   })
 
-  it('passes the reasoning effort through unnormalized', async () => {
+  it('passes an explicit reasoning effort through unnormalized', async () => {
     // Each surface names its thinking control differently, so the surface module
     // is the only layer that can decide whether a value is expressible at all.
-    const request = await toMoarkRequest(options({ reasoningEffort: 'high' }))
+    const request = await toMoarkRequest(options({ reasoningEffort: 'high', maxTokens: 64 }))
     expect(request.reasoningEffort).toBe('high')
+  })
+
+  it('turns thinking OFF for an auxiliary call whose cap a trace could eat', async () => {
+    // MEASURED live: a 24-token cap on deepseek-v4.1-flash spent the whole
+    // budget on the trace and returned EMPTY text with a length finish, which
+    // DSH reports as a truncated turn. DSH's own session-title call uses
+    // maxTokens 64, so this is the difference between titles working and every
+    // title coming back empty.
+    const request = await toMoarkRequest(options({ model: 'DeepSeek-V4-Pro', maxTokens: 64 }))
+    expect(request.reasoningEffort).toBe('none')
+  })
+
+  it('leaves thinking alone for a call with a budget that can hold a trace', async () => {
+    const request = await toMoarkRequest(options({ model: 'DeepSeek-V4-Pro', maxTokens: 4_096 }))
+    expect(request.reasoningEffort).toBeUndefined()
+  })
+
+  it('does not invent a thinking control for a model with no declared reasoning support', async () => {
+    const request = await toMoarkRequest(options({ model: 'Intern-Decision-4B', maxTokens: 64 }))
+    expect(request.reasoningEffort).toBeUndefined()
+  })
+
+  it('does not turn thinking off when the caller stated no cap at all', async () => {
+    const request = await toMoarkRequest(options({ model: 'DeepSeek-V4-Pro' }))
+    expect(request.reasoningEffort).toBeUndefined()
   })
 
   it('substitutes an explanatory note for an image on a model with no declared vision', async () => {

@@ -274,3 +274,56 @@ export function moarkModelSupportsReasoning(modelId: string): boolean {
   const id = modelId.toLowerCase()
   return id.includes('deepseek-v4') || id.includes('r1') || id.includes('glm-5') || id.includes('qwen3')
 }
+
+/**
+ * Output budget below which thinking is turned OFF for an auxiliary call.
+ *
+ * MEASURED on the live OpenAI surface (2026-10-12, `deepseek-v4.1-flash`, a
+ * one-line prompt asking for a fixed string):
+ *
+ * | cap | thinking | answer text | output tokens |
+ * |-----|----------|-------------|---------------|
+ * |  24 | 24 consumed | **EMPTY** | 24 (all trace) |
+ * |  64 | 138 chars | OK | 34 |
+ * | 320 | 147 chars | OK | 37 |
+ * |  64 with `reasoning_effort: "none"` | none | OK | 3 |
+ *
+ * So a cap that a trace can eat produces an empty answer with a length finish —
+ * which DSH reports as a truncated turn. That is not hypothetical: DSH's own
+ * session-title call asks for one short line at `maxTokens: 64`, and a harder
+ * title prompt easily spends more than 64 tokens on the trace (the measurement
+ * above already spent 34 of them on a trivial one). The failure is silent and
+ * looks like the model refusing to answer.
+ *
+ * This line can do better than the Ollama line, which must RAISE the cap because
+ * its forced-thinking models cannot turn thinking off at all: MoArk's models
+ * accept `reasoning_effort: "none"`, so for a small auxiliary call the trace is
+ * switched off and the whole cap serves the answer — cheaper (3 output tokens
+ * vs 34) and it cannot starve. The threshold is the Ollama line's measured floor
+ * rather than a tight one, because the cost of a too-high value is only that an
+ * auxiliary call does not narrate its reasoning, while the cost of a too-low one
+ * is the call failing outright.
+ *
+ * A caller that states an effort explicitly always wins: this only fills in the
+ * case where nobody said anything and the budget is too small for a trace.
+ */
+export const SMALL_CALL_THINKING_FLOOR_TOKENS = 512
+
+/**
+ * The thinking control to send for one call, or undefined to leave it alone.
+ *
+ * @param modelId - the routed model id.
+ * @param requested - the caller's reasoning effort, undefined when it stated none.
+ * @param maxOutputTokens - the caller's cap, undefined when it stated none.
+ * @returns the effort to send, or undefined to send nothing.
+ */
+export function reasoningEffortForCall(
+  modelId: string,
+  requested: unknown,
+  maxOutputTokens: number | undefined,
+): unknown {
+  if (requested !== undefined) return requested
+  if (!moarkModelSupportsReasoning(modelId)) return undefined
+  if (maxOutputTokens === undefined) return undefined
+  return maxOutputTokens < SMALL_CALL_THINKING_FLOOR_TOKENS ? 'none' : undefined
+}

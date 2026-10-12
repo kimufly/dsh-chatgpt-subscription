@@ -125,6 +125,7 @@ Anthropic 面的鉴权：官方页只写了 `ANTHROPIC_AUTH_TOKEN`（Claude Code
 | D8 | 402 | 单独映射 `QUOTA_EXCEEDED` | §3.6 |
 | D9 | 冷却时长 | 15 分钟（`POOL_COOLDOWN_MS`） | 预付费包的「429」是真实限流/耗尽，短退避无意义；与 Ollama 同值 |
 | D10 | 上下文窗口默认 | `128_000` | 目录不声明；官方 Codex 页对 `DeepSeek-V4-Pro` 配了 1,000,000，但那是**一个模型**的推荐值，不是全平台地板。取保守值：偏小只是多一次压缩，偏大则溢出丢轮次 |
+| D11 | 小额度调用关闭思考 | 调用方**未指定** effort 且 `maxTokens < 512` 时发 `reasoning_effort: "none"` | §7 的实网实测：24 token 上限下全部预算被思考吃掉，正文为空；MoArk 支持 `none`（实测），所以关闭比抬上限更便宜也更稳 |
 
 ---
 
@@ -205,8 +206,43 @@ MoArk 线路把 `strategy` 分支**提前到 `accountId` 判断之前**，并在
 2. **Responses 面正文被重复输出**（`responses.ts`）：标准 Responses 流会在 `response.output_text.delta` 之后，再为同一个 message item 发 `response.output_item.done`，而那个终态条目携带**完整正文**。原实现无条件采纳它，**每段回答都会显示两遍**；原注释声称「仅在无增量时采纳」，但代码里并没有这个判断。现已按 `sawTextDelta` 真正加门：增量到过就不再采纳终态文本，增量没到过（网关缓冲的情形）才采纳。仓库自身的 `responses-client.ts` 的 `adoptText` 早就是这个做法，此处对齐它，并补了两条回归测试（有增量 / 无增量）。
 3. **Anthropic 面输入 token 计数被清零**（`anthropic.ts`）：Anthropic 把用量**拆在两个事件**里——`message_start` 给 `input_tokens`，`message_delta` 通常**只给 `output_tokens`**。适配器取「最后一个 usage 事件」，而原实现把缺失的输入计数写成 `0`，于是每轮记账的输入侧永远是 0。现改为**跨帧携带** `input_tokens`（`message_delta` 未给就沿用 `message_start` 的值）。原测试把 `{inputTokens: 0, outputTokens: 9}` 当成期望值，属于「把错误固化进测试」，已一并改正。
 4. **`stop_reason: 'tool_use'` 未归一**（`anthropic.ts`）：Anthropic 的 `tool_use` 与另两面的 `tool_calls` 是同一个终态，现统一归一。当前映射器只依据「是否出现过工具调用」决定 finish（因此这个字段此前是惰性的），但归一后任何将来读取该字段的消费者看到的是同一套词汇。
+5. **小额度调用的正文被思考吃掉**（`types.ts` + `adapter.ts`）：见 §7 的实网实测。24 token 上限下正文为空、且以 length 结束（DSH 会报成截断）；DSH 自己的会话标题调用用 `maxTokens: 64`，同样危险。修法是**调用方未指定 effort 且 `maxTokens < 512` 时发 `reasoning_effort: "none"`**（实测 MoArk 支持，3 个输出 token 就够，比抬上限更省也更不会饿死）。这一点比 Ollama 线路做得好：那条线路的模型**不能**关闭思考，只能抬上限。
 
 > 第 1、3 条由测试暴露（第 3 条我最初还把错误值写进了断言）；第 2 条由一次独立只读复核发现——**它当时没有被任何测试覆盖**，因为既有用例只走了 `function_call` 分支。这几条都不是编译期能发现的问题，也正是「实现完必须用测试钉住行为」的理由。
+
+### 实网验证（2026-10-12，真实访问令牌，三条协议面全部实测）
+
+不只跑 curl，而是**用本线路自己的适配器**打真实上游（临时脚本构造 `MoarkAdapter`，把令牌写进内存凭据库后调用 `listModels()` 与 `stream()`，验证完即删除脚本、不落盘）：
+
+| 检查 | 结果 |
+|---|---|
+| `adapter.listModels()` | **142 个模型**（上游此刻 220 条，拒绝名单丢弃 78） |
+| `openai` 面（`/v1/chat/completions`） | 真实流式返回正文 `WIRE-OK` |
+| `responses` 面（`/v1/responses`） | 真实流式返回正文 `WIRE-OK` |
+| `anthropic` 面（`/anthropic/v1/messages`） | 真实流式返回正文 `WIRE-OK` |
+| 目录增长 | 实测已由 208 条增长到 **220 条**，说明「实时目录、无兜底表」的选择是对的 |
+
+三条面都跑在 `maxTokens: 64`（DSH 辅助调用的量级）下，这既是端到端验证，也是 D11 那条修复的验证。
+
+**实网暴露的两个只有真调用才能发现的事实：**
+
+1. **OpenAI 面默认就返回 `usage`**，无需 `stream_options: {include_usage: true}`——先前独立复核提出的「可能拿不到 token 计数」的风险据此排除，因此本线路**不发送**该字段（少一个上游可能不认识的参数）。
+2. **思考会吃光小额度**（D11 的实测表）：
+
+   | 上限 | 思考 | 正文 | 输出 token |
+   |---|---|---|---|
+   | 24 | 占满 | **空** | 24（全是思考） |
+   | 64 | 138 字符 | OK | 34 |
+   | 320 | 147 字符 | OK | 37 |
+   | 64 + `reasoning_effort:"none"` | 无 | OK | **3** |
+
+   同一组实测还确认：`response.output_text.delta` → `response.output_text.done` → 终态 message item **三处都带同一份完整正文**（不设门就会重复输出三遍），以及 `message_start` 报 `input_tokens: 0` 而真实计数出现在 `message_delta`。这两条已固化为 `test/moark-live-samples.test.ts` 的回归夹具（帧内容逐字取自真实响应）。
+
+### 尚未验证（如实记录）
+
+- **Web 设置页的实际观感**：宿主侧注册、hub 概览条目与客户端渲染都有测试覆盖，但浏览器里的真实观感需要重启 DSH（安装时报告 `restart-required`）后刷新页面才能确认。
+- **Anthropic 面的 `input_tokens` 是否总出现在 `message_delta`**：实测这一次是（报 91），所以「跨帧携带」是防御性实现而非唯一路径；`message_start` 报 0 的行为已被夹具钉住。
+- **图片输入**：视觉家族按名字声明，未做真实图片调用验证。
 
 ---
 

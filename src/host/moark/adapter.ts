@@ -28,6 +28,7 @@ import {
   contextWindowFor,
   isMoarkChatModel,
   moarkModelSupportsImage,
+  reasoningEffortForCall,
   wireForModel,
   type MoarkCatalogModel,
 } from './types.ts'
@@ -675,8 +676,12 @@ export async function toMoarkRequest(
   if (options.temperature !== undefined) request.temperature = options.temperature
   // The reasoning effort is passed through unnormalized: each surface names its
   // thinking control differently and some have none, so the surface module is the
-  // only layer that can decide whether a given value is expressible at all.
-  if (options.reasoningEffort !== undefined) request.reasoningEffort = options.reasoningEffort
+  // only layer that can decide whether a given value is expressible at all. The
+  // one decision made here is turning thinking OFF for a call whose cap is too
+  // small to hold both a trace and an answer - see
+  // `SMALL_CALL_THINKING_FLOOR_TOKENS` for the measurements behind it.
+  const effort = reasoningEffortForCall(options.model, options.reasoningEffort, options.maxTokens)
+  if (effort !== undefined) request.reasoningEffort = effort
 
   const tools = options.tools
   if (Array.isArray(tools) && tools.length > 0) {
